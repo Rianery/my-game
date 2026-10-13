@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4 Pics 1 Word - Algorithm Edition</title>
+<style>
+  /* ============ DESIGN TOKENS (edit these to restyle everything) ============ */
+  :root{
+    --bg-1:#0a1226; --bg-2:#101c38;
+    --frame:#b8dde3;          /* light blue picture border */
+    --slot:#8f9296;           /* empty answer slot */
+    --slot-fill:#4b6fd6;      /* filled slot */
+    --tile-bg:#ffffff; --tile-ink:#0b1a3c;
+    --accent:#ffc83d; --good:#2fbf71; --bad:#e5484d;
+    --ink:#ffffff; --muted:#9fb0d0;
+    --radius:6px;
+    --font:"Montserrat","Segoe UI",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:#05080f;font-family:var(--font);color:var(--ink);
+  }
+
+  /* ============ PHONE FRAME (360 x 640) ============ */
+  .app{
+    position:relative;width:360px;height:640px;overflow:hidden;
+    background:
+      repeating-linear-gradient(135deg,rgba(255,255,255,.035) 0 3px,transparent 3px 7px),
+      linear-gradient(180deg,var(--bg-2),var(--bg-1));
+    border-radius:14px;
+  }
+  .screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;padding:18px 16px;}
+  .screen.active{display:flex}
+
+  /* ============ GENERIC UI ============ */
+  h1{font-size:30px;font-weight:800;text-align:center;line-height:1.1;letter-spacing:.5px}
+  h2{font-size:20px;font-weight:800;text-align:center}
+  p.sub{color:var(--muted);font-size:13px;text-align:center;line-height:1.5}
+  .btn{
+    font-family:var(--font);font-weight:800;font-size:15px;letter-spacing:1px;
+    background:var(--accent);color:#1b1500;border:0;border-radius:10px;
+    padding:13px 26px;cursor:pointer;box-shadow:0 4px 0 #b88a10;
+  }
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b88a10}
+  .btn.ghost{background:transparent;color:var(--ink);border:2px solid var(--frame);box-shadow:none}
+  .topbar{width:100%;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;min-height:30px}
+  .chip{background:rgba(255,255,255,.1);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700}
+  .iconbtn{background:rgba(255,255,255,.1);color:#fff;border:0;border-radius:8px;width:32px;height:32px;font-size:16px;cursor:pointer}
+
+  /* ============ SPLASH ============ */
+  .splash{justify-content:center;gap:18px}
+  .mini-grid{display:grid;grid-template-columns:repeat(2,70px);gap:6px;margin-bottom:6px}
+  .mini-grid i{display:block;height:70px;background:var(--frame);border-radius:4px;opacity:.9}
+  .mini-grid i:nth-child(2){background:#ffc83d}.mini-grid i:nth-child(3){background:#8fb8ff}.mini-grid i:nth-child(4){background:#ff8f8f}
+
+  /* ============ HOW TO ============ */
+  .steps{display:flex;flex-direction:column;gap:12px;margin:18px 0;width:100%}
+  .step{display:flex;gap:12px;align-items:center;background:rgba(255,255,255,.07);padding:12px;border-radius:12px;font-size:13px;line-height:1.4}
+  .step b{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent);color:#1b1500;display:flex;align-items:center;justify-content:center;font-weight:800}
+
+  /* ============ LEVEL SELECT ============ */
+  .levels{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%;margin:14px 0}
+  .lvl{
+    aspect-ratio:1;border-radius:12px;border:2px solid var(--frame);background:rgba(255,255,255,.07);
+    color:#fff;font-family:var(--font);font-weight:800;font-size:22px;cursor:pointer;position:relative;
+  }
+  .lvl.done{background:rgba(47,191,113,.25);border-color:var(--good)}
+  .lvl.done::after{content:"\2713";position:absolute;top:4px;right:8px;font-size:14px;color:var(--good)}
+  .lvl small{display:block;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px}
+
+  /* ============ GAME ============ */
+  .pics{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:292px;margin:0 auto}
+  .pic{
+    position:relative;border:5px solid var(--frame);background:var(--frame);
+    aspect-ratio:1;overflow:hidden;cursor:zoom-in;
+  }
+  /* >>> REPLACE IMAGES: swap each <img src="..."> in the HTML, or double-click a picture to upload one <<< */
+  .pic img{width:100%;height:100%;object-fit:cover;display:block}
+
+  .answer{display:flex;justify-content:center;gap:5px;margin:12px 0 14px;min-height:46px}
+  .slot{
+    width:var(--sw,40px);height:var(--sh,46px);border-radius:3px;background:var(--slot);
+    display:flex;align-items:center;justify-content:center;
+    font-size:calc(var(--sw,40px) * .62);font-weight:500;color:#fff;cursor:default;
+    transition:transform .12s, background .2s;
+  }
+  .slot.filled{background:var(--slot-fill);cursor:pointer;font-weight:800}
+  .slot.locked{background:var(--accent);color:#1b1500;cursor:default}
+  .slot.filled:hover{transform:translateY(-2px)}
+  .answer.wrong .slot.filled{background:var(--bad)}
+  .answer.right .slot{background:var(--good);color:#fff}
+  .answer.wrong{animation:shake .4s}
+  @keyframes shake{20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+
+  .tiles{display:grid;grid-template-columns:repeat(7,40px);gap:6px;justify-content:center}
+  .tile{
+    height:46px;background:var(--tile-bg);color:var(--tile-ink);border:0;border-radius:var(--radius);
+    font-family:var(--font);font-weight:800;font-size:24px;cursor:pointer;
+    box-shadow:0 3px 0 #b8c2d8;
+  }
+  .tile:active{transform:translateY(2px);box-shadow:0 1px 0 #b8c2d8}
+  .tile.used{visibility:hidden}
+
+  .tools{display:flex;gap:8px;margin-top:auto;width:100%;justify-content:center}
+  .tools .btn{font-size:12px;padding:10px 12px;border-radius:9px;box-shadow:none;background:rgba(255,255,255,.12);color:#fff;letter-spacing:.5px}
+  .tools .btn.undo{background:var(--accent);color:#1b1500}
+
+  /* ============ OVERLAYS ============ */
+  .overlay{
+    position:absolute;inset:0;background:rgba(5,8,15,.88);display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;z-index:5;padding:24px;text-align:center;
+  }
+  .overlay.show{display:flex}
+  .overlay .big{font-size:34px;font-weight:800;color:var(--good);letter-spacing:2px}
+  .overlay .why{font-size:13px;color:var(--muted);line-height:1.5;background:rgba(255,255,255,.07);padding:12px 14px;border-radius:12px}
+  .zoom{z-index:9;cursor:zoom-out}
+  .zoom img{width:300px;height:300px;object-fit:cover;border:6px solid var(--frame)}
+  .done-emoji{font-size:64px}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ========== PAGE 1: SPLASH ========== -->
+  <section class="screen splash active" id="s-splash">
+    <div class="mini-grid"><i></i><i></i><i></i><i></i></div>
+    <h1>4 PICS<br>1 WORD</h1>
+    <p class="sub">Algorithm Edition<br>Guess the concept behind the pictures</p>
+    <button class="btn" data-go="s-how">PLAY</button>
+  </section>
+
+  <!-- ========== PAGE 2: HOW TO PLAY ========== -->
+  <section class="screen" id="s-how">
+    <div class="topbar"><button class="iconbtn" data-go="s-splash">&#8592;</button><span class="chip">How to play</span><span style="width:32px"></span></div>
+    <h2>Find what the 4 pictures share</h2>
+    <div class="steps">
+      <div class="step"><b>1</b><span>Look at all four pictures and think of the one word they have in common.</span></div>
+      <div class="step"><b>2</b><span>Tap letters at the bottom to fill the empty boxes.</span></div>
+      <div class="step"><b>3</b><span>Tap a filled box to take that letter back, or press <u>UNDO</u> to remove the last one.</span></div>
+      <div class="step"><b>4</b><span>Stuck? Use HINT to reveal a letter. Double-click a picture to swap in your own image.</span></div>
+    </div>
+    <button class="btn" data-go="s-levels">CHOOSE LEVEL</button>
+  </section>
+
+  <!-- ========== PAGE 3: LEVEL SELECT ========== -->
+  <section class="screen" id="s-levels">
+    <div class="topbar"><button class="iconbtn" data-go="s-how">&#8592;</button><span class="chip" id="progress">0 / 7 solved</span><span style="width:32px"></span></div>
+    <h2>Select a level</h2>
+    <div class="levels" id="levelGrid"></div>
+    <button class="btn ghost" id="resetAll">RESET PROGRESS</button>
+  </section>
+
+  <!-- ========== PAGES 4-10: LEVELS (generated, one screen each) ========== -->
+  <div id="levelScreens"></div>
+
+  <!-- ========== PAGE 11: COMPLETE ========== -->
+  <section class="screen" id="s-complete" style="justify-content:center;gap:16px">
+    <div class="done-emoji">&#127942;</div>
+    <h1>ALL SOLVED!</h1>
+    <p class="sub">You cracked all 7 algorithm words:<br><b style="color:#fff;letter-spacing:1px">CONQUER &middot; DIVIDE &middot; MERGE &middot; HALF &middot; RECURSION &middot; ARRAY &middot; INDEX</b></p>
+    <button class="btn" data-go="s-levels">LEVEL SELECT</button>
+    <button class="btn ghost" data-go="s-splash">HOME</button>
+  </section>
+
+  <!-- zoom overlay for pictures -->
+  <div class="overlay zoom" id="zoom"><img alt="" id="zoomImg"></div>
+  <input type="file" id="picker" accept="image/*" hidden>
+</div>
+
+<script>
+/* =====================================================================
+   LEVEL DATA
+   - word: the answer
+   - images: 4 file paths. Put your images in an "images" folder next to
+     this file and name them as below (or just edit the paths).
+     If a file is missing, a labelled placeholder shows instead.
+   - ideas: suggested picture ideas for each slot (shown on placeholders)
+   - why: explanation shown on the success screen
+   ===================================================================== */
+const LEVELS = [
+  { word:"CONQUER", why:"Divide and CONQUER: solve each small part, then combine the results.",
+    images:["images/conquer-1.jpg","images/conquer-2.jpg","images/conquer-3.jpg","images/conquer-4.jpg"],
+    ideas:["Flag on a mountain top","Chess checkmate","Castle being captured","Trophy / victory pose"] },
+  { word:"DIVIDE", why:"DIVIDE the big problem into smaller subproblems.",
+    images:["images/divide-1.jpg","images/divide-2.jpg","images/divide-3.jpg","images/divide-4.jpg"],
+    ideas:["Cake cut into slices","Road splitting in two","Scissors cutting paper","Division sign (÷)"] },
+  { word:"MERGE", why:"MERGE combines sorted halves back into one sorted list.",
+    images:["images/merge-1.jpg","images/merge-2.jpg","images/merge-3.jpg","images/merge-4.jpg"],
+    ideas:["Highway 'merge' sign","Zipper closing","Two rivers joining","Two arrows into one"] },
+  { word:"HALF", why:"Binary search and merge sort repeatedly cut the input in HALF.",
+    images:["images/half-1.jpg","images/half-2.jpg","images/half-3.jpg","images/half-4.jpg"],
+    ideas:["Half moon","Apple cut in half","Glass half full","1/2 pie chart"] },
+  { word:"RECURSION", why:"RECURSION: a function that calls itself on a smaller problem.",
+    images:["images/recursion-1.jpg","images/recursion-2.jpg","images/recursion-3.jpg","images/recursion-4.jpg"],
+    ideas:["Droste effect picture-in-picture","Two mirrors facing each other","Nesting dolls","Fractal fern / spiral"] },
+  { word:"ARRAY", why:"An ARRAY stores items in a row of numbered positions.",
+    images:["images/array-1.jpg","images/array-2.jpg","images/array-3.jpg","images/array-4.jpg"],
+    ideas:["Row of mailboxes","Egg carton","Lockers in a row","Boxes lined up"] },
+  { word:"INDEX", why:"An INDEX is the position number used to find an item (starts at 0).",
+    images:["images/index-1.jpg","images/index-2.jpg","images/index-3.jpg","images/index-4.jpg"],
+    ideas:["Book index page","Library card catalog","Finger pointing at a number","Numbered tabs / dividers"] }
+];
+
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+
+/* ---------- saved progress (safe if storage is blocked) ---------- */
+let solved = new Set();
+try{ solved = new Set(JSON.parse(localStorage.getItem("4p1w")||"[]")); }catch(e){}
+const save = ()=>{ try{ localStorage.setItem("4p1w",JSON.stringify([...solved])); }catch(e){} };
+
+/* ---------- navigation ---------- */
+function go(id){
+  $$(".screen").forEach(s=>s.classList.toggle("active",s.id===id));
+  if(id==="s-levels") renderLevelGrid();
+}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-go]"); if(t) go(t.dataset.go);
+});
+
+/* ---------- helpers ---------- */
+function rng(seed){ // deterministic shuffle so the layout is stable
+  return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed);
+    t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; };
+}
+function hash(s){ let h=0; for(const c of s) h=(h*31+c.charCodeAt(0))|0; return h; }
+function shuffle(arr,r){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+function placeholder(label,n){
+  const cols=["#d9edf1","#ffe9a8","#cfe0ff","#ffd0d0"];
+  const svg=`<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'>
+  <rect width='300' height='300' fill='${cols[n]}'/>
+  <text x='150' y='125' text-anchor='middle' font-family='Arial' font-weight='700' font-size='60' fill='#0b1a3c' opacity='.35'>${n+1}</text>
+  <foreignObject x='20' y='150' width='260' height='130'>
+   <div xmlns='http://www.w3.org/1999/xhtml' style='font:600 18px Arial;color:#0b1a3c;text-align:center'>${label}</div>
+  </foreignObject></svg>`;
+  return "data:image/svg+xml;utf8,"+encodeURIComponent(svg);
+}
+
+/* ---------- build level screens ---------- */
+const host = $("#levelScreens");
+const games = [];
+
+LEVELS.forEach((L,li)=>{
+  const word=L.word, len=word.length;
+  const total=14;
+  const r=rng(hash(word));
+  const alpha="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const letters=word.split("");
+  while(letters.length<total) letters.push(alpha[Math.floor(r()*26)]);
+  shuffle(letters,r);
+
+  const sec=document.createElement("section");
+  sec.className="screen"; sec.id="s-level-"+li;
+  sec.innerHTML=`
+    <div class="topbar">
+      <button class="iconbtn" data-go="s-levels">&#8592;</button>
+      <span class="chip">Level ${li+1} / ${LEVELS.length}</span>
+      <button class="iconbtn" data-act="hint" title="Hint">?</button>
+    </div>
+    <div class="pics">
+      ${L.images.map((src,i)=>`<div class="pic" data-i="${i}"><img src="${src}" alt="Picture ${i+1}"></div>`).join("")}
+    </div>
+    <div class="answer" style="--sw:${len>8?32:40}px"></div>
+    <div class="tiles"></div>
+    <div class="tools">
+      <button class="btn undo" data-act="undo">&#8630; UNDO</button>
+      <button class="btn" data-act="clear">CLEAR</button>
+      <button class="btn" data-act="shuffle">SHUFFLE</button>
+    </div>
+    <div class="overlay">
+      <div class="big">CORRECT!</div>
+      <h2>${word}</h2>
+      <div class="why">${L.why}</div>
+      <button class="btn" data-act="next">${li===LEVELS.length-1?"FINISH":"NEXT LEVEL"}</button>
+      <button class="btn ghost" data-go="s-levels">LEVEL SELECT</button>
+    </div>`;
+  host.appendChild(sec);
+
+  // image fallbacks -> labelled placeholders
+  $$(".pic img",sec).forEach((img,i)=>{
+    img.onerror=()=>{ img.onerror=null; img.src=placeholder(L.ideas[i],i); };
+  });
+
+  const G={ li, word, letters, sec,
+    slots:Array(len).fill(null),   // tile index per slot
+    locked:Array(len).fill(false),
+    order:letters.map((_,i)=>i),   // display order of tiles
+    answerEl:$(".answer",sec), tilesEl:$(".tiles",sec), over:$(".overlay",sec) };
+  games.push(G); draw(G);
+
+  sec.addEventListener("click",e=>{
+    const a=e.target.closest("[data-act]"); if(!a) return;
+    ({undo:()=>undo(G),clear:()=>clear(G),shuffle:()=>reshuffle(G),hint:()=>hint(G),
+      next:()=>{ if(li<LEVELS.length-1) go("s-level-"+(li+1)); else go("s-complete"); G.over.classList.remove("show"); }}[a.dataset.act])();
+  });
+});
+
+/* ---------- game logic ---------- */
+function draw(G){
+  G.answerEl.innerHTML=""; G.tilesEl.innerHTML="";
+  G.slots.forEach((t,i)=>{
+    const s=document.createElement("div");
+    s.className="slot"+(t!==null?" filled":"")+(G.locked[i]?" locked":"");
+    s.textContent=t!==null?G.letters[t]:"";
+    s.onclick=()=>takeBack(G,i);      // tap a filled box = put letter back
+    G.answerEl.appendChild(s);
+  });
+  G.order.forEach(ti=>{
+    const b=document.createElement("button");
+    b.className="tile"+(G.slots.includes(ti)?" used":"");
+    b.textContent=G.letters[ti];
+    b.onclick=()=>place(G,ti);
+    G.tilesEl.appendChild(b);
+  });
+}
+function place(G,ti){
+  const i=G.slots.indexOf(null); if(i<0) return;
+  G.slots[i]=ti; draw(G); check(G);
+}
+function takeBack(G,i){
+  if(G.locked[i]||G.slots[i]===null) return;
+  G.slots[i]=null; G.answerEl.classList.remove("wrong"); draw(G);
+}
+function undo(G){                      // remove the most recent (right-most) unlocked letter
+  for(let i=G.slots.length-1;i>=0;i--){
+    if(G.slots[i]!==null && !G.locked[i]){ G.slots[i]=null; break; }
+  }
+  G.answerEl.classList.remove("wrong"); draw(G);
+}
+function clear(G){
+  G.slots=G.slots.map((t,i)=>G.locked[i]?t:null);
+  G.answerEl.classList.remove("wrong"); draw(G);
+}
+function reshuffle(G){
+  G.order=shuffle(G.order,Math.random); draw(G);
+}
+function hint(G){
+  const i=G.slots.findIndex((t,k)=>!G.locked[k] && (t===null || G.letters[t]!==G.word[k]));
+  if(i<0) return;
+  const need=G.word[i];
+  // find a tile with that letter that isn't locked into another slot
+  let ti=G.letters.findIndex((c,k)=>c===need && !G.locked.some((l,s)=>l&&G.slots[s]===k));
+  if(ti<0) return;
+  // free the tile if it's used in an unlocked slot elsewhere
+  const used=G.slots.indexOf(ti); if(used>=0 && used!==i) G.slots[used]=null;
+  G.slots[i]=ti; G.locked[i]=true;
+  draw(G); check(G);
+}
+function check(G){
+  if(G.slots.includes(null)) return;
+  const guess=G.slots.map(t=>G.letters[t]).join("");
+  if(guess===G.word){
+    G.answerEl.classList.add("right");
+    solved.add(G.li); save();
+    setTimeout(()=>{ G.over.classList.add("show"); G.answerEl.classList.remove("right"); },650);
+  }else{
+    G.answerEl.classList.remove("wrong"); void G.answerEl.offsetWidth; G.answerEl.classList.add("wrong");
+  }
+}
+
+/* ---------- level select ---------- */
+function renderLevelGrid(){
+  const g=$("#levelGrid"); g.innerHTML="";
+  LEVELS.forEach((L,i)=>{
+    const b=document.createElement("button");
+    b.className="lvl"+(solved.has(i)?" done":"");
+    b.innerHTML=`${i+1}<small>${L.word.length} LETTERS</small>`;
+    b.onclick=()=>{
+      const G=games[i]; G.slots.fill(null); G.locked.fill(false); G.over.classList.remove("show");
+      if(solved.has(i)){ G.word.split("").forEach((c,k)=>{ G.slots[k]=G.letters.findIndex((x,ti)=>x===c && !G.slots.includes(ti)); }); }
+      draw(G); go("s-level-"+i);
+    };
+    g.appendChild(b);
+  });
+  $("#progress").textContent=`${solved.size} / ${LEVELS.length} solved`;
+}
+$("#resetAll").onclick=()=>{ solved=new Set(); save(); games.forEach(G=>{G.slots.fill(null);G.locked.fill(false);draw(G);}); renderLevelGrid(); };
+
+/* ---------- pictures: tap = zoom, double-click = replace with your own image ---------- */
+let target=null;
+document.addEventListener("click",e=>{
+  const p=e.target.closest(".pic"); if(!p) return;
+  $("#zoomImg").src=$("img",p).src; $("#zoom").classList.add("show");
+});
+$("#zoom").onclick=()=>$("#zoom").classList.remove("show");
+document.addEventListener("dblclick",e=>{
+  const p=e.target.closest(".pic"); if(!p) return;
+  $("#zoom").classList.remove("show"); target=$("img",p); $("#picker").click();
+});
+$("#picker").onchange=e=>{
+  const f=e.target.files[0]; if(!f||!target) return;
+  target.src=URL.createObjectURL(f); e.target.value="";
+};
+
+renderLevelGrid();
+</script>
+</body>
+</html>
